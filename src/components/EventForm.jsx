@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   collection, addDoc, updateDoc, deleteDoc,
   doc, serverTimestamp, Timestamp,
@@ -16,13 +16,31 @@ function toDatetimeLocal(date) {
   );
 }
 
-const EMPTY = { title: '', start: '', end: '', location: '', description: '', assignee: '', category: 'worship' };
+async function uploadToCloudinary(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: 'POST', body: formData }
+  );
+  if (!res.ok) throw new Error('画像のアップロードに失敗しました');
+  const data = await res.json();
+  return data.secure_url;
+}
+
+const EMPTY = {
+  title: '', start: '', end: '', location: '',
+  description: '', assignee: '', category: 'worship', photoUrls: [],
+};
 
 export default function EventForm({ initialData, onClose }) {
   const isEdit = Boolean(initialData?.id);
   const [form, setForm] = useState(EMPTY);
+  const [pendingFiles, setPendingFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (initialData) {
@@ -34,13 +52,27 @@ export default function EventForm({ initialData, onClose }) {
         description: initialData.description ?? '',
         assignee:    initialData.assignee    ?? '',
         category:    initialData.category    ?? 'worship',
+        photoUrls:   initialData.photoUrls   ?? [],
       });
     } else {
       setForm(EMPTY);
     }
+    setPendingFiles([]);
   }, [initialData]);
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files).filter((f) => f.type.startsWith('image/'));
+    setPendingFiles((prev) => [...prev, ...files]);
+    e.target.value = '';
+  };
+
+  const removePending = (index) =>
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+
+  const removeExisting = (index) =>
+    setForm((prev) => ({ ...prev, photoUrls: prev.photoUrls.filter((_, i) => i !== index) }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -51,6 +83,11 @@ export default function EventForm({ initialData, onClose }) {
     setLoading(true);
     setError('');
     try {
+      let newUrls = [];
+      if (pendingFiles.length > 0) {
+        newUrls = await Promise.all(pendingFiles.map(uploadToCloudinary));
+      }
+
       const payload = {
         title:       form.title.trim(),
         start:       Timestamp.fromDate(new Date(form.start)),
@@ -59,7 +96,9 @@ export default function EventForm({ initialData, onClose }) {
         description: form.description.trim(),
         assignee:    form.assignee.trim(),
         category:    form.category,
+        photoUrls:   [...form.photoUrls, ...newUrls],
       };
+
       if (isEdit) {
         await updateDoc(doc(db, 'events', initialData.id), payload);
       } else {
@@ -145,6 +184,62 @@ export default function EventForm({ initialData, onClose }) {
               placeholder="活動の詳細を入力..." />
           </div>
 
+          {/* ===== 写真アップロード ===== */}
+          <div className="form-group">
+            <label className="form-label">写真</label>
+
+            {/* 既存の保存済み写真 */}
+            {form.photoUrls.length > 0 && (
+              <div className="photo-preview-grid">
+                {form.photoUrls.map((url, i) => (
+                  <div key={url} className="photo-thumb-wrap">
+                    <img src={url} alt={`写真 ${i + 1}`} className="photo-thumb" />
+                    <button
+                      type="button"
+                      className="photo-remove-btn"
+                      onClick={() => removeExisting(i)}
+                      aria-label="削除"
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 追加予定の写真（未アップロード） */}
+            {pendingFiles.length > 0 && (
+              <div className="photo-preview-grid">
+                {pendingFiles.map((file, i) => (
+                  <div key={i} className="photo-thumb-wrap">
+                    <img src={URL.createObjectURL(file)} alt={file.name} className="photo-thumb" />
+                    <button
+                      type="button"
+                      className="photo-remove-btn"
+                      onClick={() => removePending(i)}
+                      aria-label="削除"
+                    >×</button>
+                    <span className="photo-pending-badge">未保存</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleFileChange}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary photo-add-btn"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              + 写真を追加
+            </button>
+          </div>
+
           {isEdit ? (
             <div className="btn-row-between">
               <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={loading}>
@@ -155,7 +250,7 @@ export default function EventForm({ initialData, onClose }) {
                   キャンセル
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={loading}>
-                  {loading ? '保存中...' : '更新'}
+                  {loading ? (pendingFiles.length > 0 ? 'アップロード中...' : '保存中...') : '更新'}
                 </button>
               </div>
             </div>
@@ -165,7 +260,7 @@ export default function EventForm({ initialData, onClose }) {
                 キャンセル
               </button>
               <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? '保存中...' : '追加'}
+                {loading ? (pendingFiles.length > 0 ? 'アップロード中...' : '保存中...') : '追加'}
               </button>
             </div>
           )}

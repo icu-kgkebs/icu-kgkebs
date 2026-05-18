@@ -10,7 +10,7 @@ export default function EventModal({ event, onClose }) {
   if (!event) return null;
 
   const { title, start, end, extendedProps = {} } = event;
-  const { location, description, assignee, category } = extendedProps;
+  const { location, description, assignee, category, photoUrls = [] } = extendedProps;
   const cat = CATEGORIES[category] ?? CATEGORIES.event;
 
   return (
@@ -31,6 +31,16 @@ export default function EventModal({ event, onClose }) {
           }} />
           {cat.label}
         </span>
+
+        {photoUrls.length > 0 && (
+          <div className="event-photos">
+            {photoUrls.map((url, i) => (
+              <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                <img src={url} alt={`写真 ${i + 1}`} className="event-photo" />
+              </a>
+            ))}
+          </div>
+        )}
 
         <div className="detail-row">
           <span className="detail-icon">📅</span>

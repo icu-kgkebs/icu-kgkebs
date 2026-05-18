@@ -9,7 +9,7 @@ import Admin from './pages/Admin';
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/icu-kgkebs">
         <Navbar />
         <Routes>
           <Route path="/" element={<PublicCalendar />} />

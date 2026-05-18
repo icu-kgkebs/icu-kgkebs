@@ -25,6 +25,7 @@ function docToFCEvent(doc) {
       description: d.description,
       assignee:    d.assignee,
       category:    d.category,
+      photoUrls:   d.photoUrls ?? [],
     },
   };
 }
